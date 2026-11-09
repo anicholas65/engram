@@ -38,6 +38,7 @@ from app.models.encode import (
     EncodeSettings,
     EncodeTask,
     EncodeTaskState,
+    RateControl,
 )
 
 PROGRESS_INTERVAL_SECONDS = 1.0
@@ -184,6 +185,8 @@ class EncodeQueue:
                     temp_path_for(Path(task.source_path)).unlink(missing_ok=True)
                 task.state = EncodeTaskState.QUEUED
                 task.progress = 0.0
+                task.started_at = None
+                task.current_kbps = None
                 task.note = "Re-queued after restart"
                 session.add(task)
             await session.commit()
@@ -334,6 +337,7 @@ class EncodeQueue:
             task.progress = 0.0
             task.error = task.note = None
             task.started_at = task.finished_at = None
+            task.current_kbps = task.output_video_kbps = None
             session.add(task)
             await session.commit()
             await session.refresh(task)
@@ -423,9 +427,14 @@ class EncodeQueue:
             await ws_manager.broadcast({"type": "encode_task", "task": task_dict(task)})
 
     async def _run_task(self, task_id: int) -> None:
+        # The temp path is known up front so every failure path can clean it up.
         temp: Path | None = None
+        async with database.async_session() as session:
+            row = await session.get(EncodeTask, task_id)
+            if row is not None:
+                temp = temp_path_for(Path(row.source_path))
         try:
-            temp = await self._encode(task_id)
+            await self._encode(task_id)
         except asyncio.CancelledError:
             if temp:
                 with contextlib.suppress(OSError):
@@ -438,38 +447,60 @@ class EncodeQueue:
                     temp.unlink(missing_ok=True)
             await self._finish(task_id, EncodeTaskState.FAILED, error=str(e)[:2000])
 
-    async def _encode(self, task_id: int) -> Path | None:
+    async def _cancel_if_requested(self, task_id: int, temp: Path | None = None) -> bool:
+        if task_id not in self._cancel_requested:
+            return False
+        if temp:
+            with contextlib.suppress(OSError):
+                temp.unlink(missing_ok=True)
+        await self._finish(task_id, EncodeTaskState.CANCELLED, note="Cancelled by user")
+        return True
+
+    async def _encode(self, task_id: int) -> None:
         async with database.async_session() as session:
             task = await session.get(EncodeTask, task_id)
             profile = await session.get(EncodeProfile, task.profile_id) if task else None
         if task is None:
-            return None
+            return
         if profile is None:
             await self._finish(task_id, EncodeTaskState.FAILED, error="Profile was deleted")
-            return None
+            return
         settings = await get_settings()
 
         source = Path(task.source_path)
         if not source.is_file():
             await self._finish(task_id, EncodeTaskState.FAILED, error="Source file not found")
-            return None
+            return
         ffmpeg = await resolve_ffmpeg()
         if not ffmpeg:
             await self._finish(task_id, EncodeTaskState.FAILED, error="ffmpeg not found")
-            return None
+            return
         ffprobe = encoder.ffprobe_for(ffmpeg)
 
         await self._update(
             task_id,
             state=EncodeTaskState.RUNNING,
-            started_at=_now(),
             progress=0.0,
             source_bytes=source.stat().st_size,
+            note="Analysing source…",
         )
         info = await encoder.probe(source, ffprobe)
+        source_kbps = round(info.video_bit_rate / 1000) if info.video_bit_rate else None
+        is_bitrate = profile.rate_control == RateControl.BITRATE
+        await self._update(
+            task_id,
+            encoder=profile.encoder.value,
+            source_video_kbps=source_kbps,
+            target_kbps=profile.video_bitrate_kbps if is_bitrate else None,
+            peak_kbps=profile.max_bitrate_kbps,
+            quality=None if is_bitrate else (profile.quality or None),
+            duration_seconds=info.duration,
+        )
         if reason := encoder.skip_reason(info, profile, ratio=settings.skip_if_source_below_ratio):
             await self._finish(task_id, EncodeTaskState.SKIPPED, note=reason, progress=100.0)
-            return None
+            return
+        if await self._cancel_if_requested(task_id):
+            return
 
         estimate = encoder.estimate_size_bytes(info, profile) or source.stat().st_size
         free = shutil.disk_usage(source.parent).free
@@ -480,14 +511,25 @@ class EncodeQueue:
 
         temp = temp_path_for(source)
         cmd = encoder.build_command(ffmpeg, source, temp, profile, info)
-        await self._update(task_id, command=shlex.join(cmd), duration_seconds=info.duration)
-        logger.info(f"Encode task {task_id}: {source.name} with {profile.name!r}")
+        await self._update(
+            task_id, command=shlex.join(cmd), started_at=_now(), note=None, current_kbps=None
+        )
+        rate = (
+            f"target {profile.video_bitrate_kbps / 1000:g} Mbps"
+            + (f" (peak {profile.max_bitrate_kbps / 1000:g})" if profile.max_bitrate_kbps else "")
+            if is_bitrate and profile.video_bitrate_kbps
+            else f"CQ {profile.quality}"
+        )
+        src = f"{source_kbps / 1000:.1f} Mbps" if source_kbps else "unknown"
+        logger.info(
+            f"Encode task {task_id} started: {source.name} with {profile.name!r} "
+            f"({profile.encoder.value}, {rate}, source video {src})"
+        )
 
-        returncode, stderr_tail = await self._run_ffmpeg(task_id, cmd, info.duration)
-        if task_id in self._cancel_requested:
-            temp.unlink(missing_ok=True)
-            await self._finish(task_id, EncodeTaskState.CANCELLED, note="Cancelled by user")
-            return None
+        audio_bps = encoder.output_audio_bps(info, profile)
+        returncode, stderr_tail = await self._run_ffmpeg(task_id, cmd, info.duration, audio_bps)
+        if await self._cancel_if_requested(task_id, temp):
+            return
         if returncode != 0:
             temp.unlink(missing_ok=True)
             raise RuntimeError(f"ffmpeg exited {returncode}: {stderr_tail}")
@@ -497,8 +539,15 @@ class EncodeQueue:
         if problems := encoder.verify_output(info, out_info, profile):
             temp.unlink(missing_ok=True)
             raise RuntimeError("Verification failed: " + "; ".join(problems))
+        # Last chance to back out: after this the original is replaced.
+        if await self._cancel_if_requested(task_id, temp):
+            return
 
         output_bytes = temp.stat().st_size
+        output_kbps = None
+        if out_info.duration > 0:
+            video_bps = output_bytes * 8 / out_info.duration - audio_bps
+            output_kbps = round(video_bps / 1000) if video_bps > 0 else None
         roots = await library_roots()
         note = await asyncio.to_thread(self._swap_in, source, temp, settings, roots)
         src_bytes = info.size_bytes or 0
@@ -508,15 +557,23 @@ class EncodeQueue:
         if info.dolby_vision:
             note += " Dolby Vision layer not carried over; HDR10 kept."
         await self._finish(
-            task_id, EncodeTaskState.DONE, output_bytes=output_bytes, note=note.strip()
+            task_id,
+            EncodeTaskState.DONE,
+            output_bytes=output_bytes,
+            output_video_kbps=output_kbps,
+            note=note.strip(),
         )
-        return None
 
-    async def _run_ffmpeg(self, task_id: int, cmd: list[str], duration: float) -> tuple[int, str]:
+    async def _run_ffmpeg(
+        self, task_id: int, cmd: list[str], duration: float, audio_bps: int = 0
+    ) -> tuple[int, str]:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         self._procs[task_id] = proc
+        if task_id in self._cancel_requested:  # Cancelled while ffmpeg was starting
+            with contextlib.suppress(ProcessLookupError):
+                proc.terminate()
         stderr_lines: deque[str] = deque(maxlen=20)
 
         async def drain_stderr() -> None:
@@ -541,6 +598,7 @@ class EncodeQueue:
                     fps=state.fps,
                     speed=state.speed,
                     eta_seconds=state.eta(duration),
+                    current_kbps=state.video_kbps(audio_bps),
                 )
         returncode = await proc.wait()
         await stderr_task

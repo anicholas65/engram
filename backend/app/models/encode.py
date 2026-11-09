@@ -111,6 +111,15 @@ class EncodeTask(SQLModel, table=True):
     speed: float | None = None  # Multiple of realtime
     eta_seconds: int | None = None
     duration_seconds: float | None = None
+    # Bitrates (kbps) for display. "current" is the live video rate while encoding,
+    # "output" the measured video rate of the finished file.
+    encoder: str | None = None  # ffmpeg encoder actually used (e.g. hevc_nvenc)
+    source_video_kbps: int | None = None
+    target_kbps: int | None = None  # None for constant-quality profiles
+    peak_kbps: int | None = None
+    quality: int | None = None  # CQ/CRF for constant-quality profiles
+    current_kbps: int | None = None
+    output_video_kbps: int | None = None
 
     source_bytes: int | None = None
     output_bytes: int | None = None
@@ -134,7 +143,9 @@ class EncodeSettings(SQLModel, table=True):
     movie_4k_profile_id: int | None = None  # Sources taller than 1440 lines
     tv_profile_id: int | None = None
     include_extras: bool = True
-    concurrency: int = 2  # Simultaneous encodes (NVENC sessions are shared with Jellyfin)
+    # Simultaneous encodes. Turing has one NVENC engine, so parallel encodes share it
+    # (and Jellyfin's transcodes) rather than finishing sooner.
+    concurrency: int = 1
     keep_original: bool = False  # Move the remux to archive_path instead of deleting it
     archive_path: str = ""
     # Skip a file whose source video is already at or below this fraction of the

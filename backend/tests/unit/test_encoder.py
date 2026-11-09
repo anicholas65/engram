@@ -290,3 +290,16 @@ class TestProgressAndEstimate:
 def test_bitrate_catalog_offers_60mbps_4k():
     assert 60 in encoder.VIDEO_BITRATE_PRESETS_MBPS["2160p"]["hevc"]
     assert 60 in encoder.VIDEO_BITRATE_PRESETS_MBPS["2160p"]["av1"]
+
+
+def test_progress_live_video_bitrate_excludes_audio():
+    state = encoder.Progress()
+    for line in ("out_time_us=1000000", "total_size=10000000"):
+        encoder.parse_progress_line(line, state)
+    assert state.video_kbps() is None  # too early to be meaningful
+    for line in ("out_time_us=10000000", "total_size=80000000"):  # 64 Mbps overall
+        encoder.parse_progress_line(line, state)
+    assert state.video_kbps() == 64_000
+    assert state.video_kbps(audio_bps=4_000_000) == 60_000
+    encoder.parse_progress_line("total_size=N/A", state)
+    assert state.total_size == 80_000_000

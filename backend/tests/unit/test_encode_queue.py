@@ -159,7 +159,7 @@ class TestEncodeRun:
                 return out_info or _info(size_bytes=400)
             return _info()
 
-        async def fake_run(self, task_id, cmd, duration):
+        async def fake_run(self, task_id, cmd, duration, audio_bps=0):
             Path(cmd[-1]).write_bytes(b"encoded")
             return returncode, "boom" if returncode else ""
 
@@ -190,6 +190,82 @@ class TestEncodeRun:
         assert not eq.temp_path_for(src).exists()
         assert "hevc_nvenc" in task.command and "60000k" in task.command
         assert "deleted" in task.note
+
+    async def test_records_start_time_and_bitrates(self, library, monkeypatch):
+        self._fake_tools(monkeypatch)
+        _, tid = await self._queue_file(library)
+        await eq.encode_queue._run_task(tid)
+        task = await _task(tid)
+        assert task.state == EncodeTaskState.DONE, task.error
+        assert task.started_at is not None and task.finished_at >= task.started_at
+        assert task.encoder == "hevc_nvenc"
+        assert (task.source_video_kbps, task.target_kbps, task.peak_kbps) == (
+            90_000,
+            60_000,
+            80_000,
+        )
+        assert task.quality is None
+
+    async def test_cancel_during_probe_never_starts_ffmpeg(self, library, monkeypatch):
+        self._fake_tools(monkeypatch)
+        ran = []
+
+        async def fake_run(self, task_id, cmd, duration, audio_bps=0):
+            ran.append(task_id)
+            return 0, ""
+
+        async def probe_then_cancel(path, ffprobe):
+            eq.encode_queue._cancel_requested.add(tid)
+            return _info()
+
+        monkeypatch.setattr(eq.EncodeQueue, "_run_ffmpeg", fake_run)
+        monkeypatch.setattr(eq.encoder, "probe", probe_then_cancel)
+        src, tid = await self._queue_file(library)
+        try:
+            await eq.encode_queue._run_task(tid)
+        finally:
+            eq.encode_queue._cancel_requested.discard(tid)
+        task = await _task(tid)
+        assert task.state == EncodeTaskState.CANCELLED and not ran
+        assert task.started_at is None
+        assert src.read_bytes() == b"remux"
+
+    async def test_cancel_during_verify_keeps_original(self, library, monkeypatch):
+        self._fake_tools(monkeypatch)
+        calls = []
+
+        async def probe(path, ffprobe):
+            calls.append(path)
+            if len(calls) == 2:  # the output probe, i.e. VERIFYING
+                eq.encode_queue._cancel_requested.add(tid)
+            return _info()
+
+        monkeypatch.setattr(eq.encoder, "probe", probe)
+        src, tid = await self._queue_file(library)
+        try:
+            await eq.encode_queue._run_task(tid)
+        finally:
+            eq.encode_queue._cancel_requested.discard(tid)
+        assert (await _task(tid)).state == EncodeTaskState.CANCELLED
+        assert src.read_bytes() == b"remux"
+        assert not eq.temp_path_for(src).exists()
+
+    async def test_unexpected_error_removes_temp(self, library, monkeypatch):
+        self._fake_tools(monkeypatch)
+        calls = []
+
+        async def probe(path, ffprobe):
+            calls.append(path)
+            if len(calls) == 2:
+                raise RuntimeError("ffprobe crashed")
+            return _info()
+
+        monkeypatch.setattr(eq.encoder, "probe", probe)
+        src, tid = await self._queue_file(library)
+        await eq.encode_queue._run_task(tid)
+        assert (await _task(tid)).state == EncodeTaskState.FAILED
+        assert not eq.temp_path_for(src).exists()
+        assert src.read_bytes() == b"remux"
 
     async def test_keep_original_mirrors_library_layout(self, library, monkeypatch, tmp_path):
         self._fake_tools(monkeypatch)

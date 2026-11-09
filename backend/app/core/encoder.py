@@ -358,9 +358,7 @@ def estimate_size_bytes(info: MediaInfo, profile: EncodeProfile) -> int | None:
         return info.size_bytes
     if profile.rate_control != RateControl.BITRATE or not profile.video_bitrate_kbps:
         return None
-    audio_bps = sum(a.bit_rate or 0 for a in kept_audio(info, profile))
-    if profile.add_stereo_aac:
-        audio_bps += profile.stereo_aac_kbps * 1000
+    audio_bps = output_audio_bps(info, profile)
     total_bps = profile.video_bitrate_kbps * 1000 + audio_bps
     return int(total_bps * info.duration / 8)
 
@@ -553,6 +551,14 @@ def build_command(
     return cmd
 
 
+def output_audio_bps(info: MediaInfo, profile: EncodeProfile) -> int:
+    """Bitrate of the audio the output carries (copied tracks + optional AAC), in bps."""
+    bps = sum(a.bit_rate or 0 for a in kept_audio(info, profile))
+    if profile.add_stereo_aac and info.audio:
+        bps += profile.stereo_aac_kbps * 1000
+    return bps
+
+
 def expected_audio_count(info: MediaInfo, profile: EncodeProfile) -> int:
     kept = kept_audio(info, profile)
     return len(kept) + (1 if profile.add_stereo_aac and kept else 0)
@@ -568,12 +574,21 @@ class Progress:
     out_seconds: float = 0.0
     fps: float | None = None
     speed: float | None = None
+    total_size: int | None = None  # Bytes written so far (all streams)
     finished: bool = False
 
     def percent(self, duration: float) -> float:
         if duration <= 0:
             return 0.0
         return max(0.0, min(100.0, self.out_seconds / duration * 100))
+
+    def video_kbps(self, audio_bps: int = 0) -> int | None:
+        """Live video bitrate: output bytes so far over output time, minus copied audio."""
+        if not self.total_size or self.out_seconds < 2:
+            return None
+        total_bps = self.total_size * 8 / self.out_seconds
+        video_bps = total_bps - audio_bps
+        return round(video_bps / 1000) if video_bps > 0 else None
 
     def eta(self, duration: float) -> int | None:
         if not self.speed or self.speed <= 0 or duration <= 0:
@@ -593,6 +608,9 @@ def parse_progress_line(line: str, state: Progress) -> bool:
             state.out_seconds = v / 1_000_000
     elif key == "fps":
         state.fps = _float(value) or state.fps
+    elif key == "total_size":
+        if (v := _int(value)) is not None and v >= 0:
+            state.total_size = v
     elif key == "speed":
         state.speed = _float(value.rstrip("x").strip()) or state.speed
     elif key == "progress":
