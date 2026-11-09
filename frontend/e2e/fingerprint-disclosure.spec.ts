@@ -19,6 +19,14 @@ import { test, expect } from "@playwright/test";
  * Run with: npm run test:e2e (starts both servers via playwright.config.ts).
  */
 
+// Fork: uploads to the upstream fingerprint network are off unless the backend runs with
+// ENGRAM_UPSTREAM_UPLOADS=1 (see contribution_uploader.py), so the drain never emits the
+// disclosure event. Only run these when that opt-in is set.
+test.skip(
+    process.env.ENGRAM_UPSTREAM_UPLOADS !== "1",
+    "fork disables upstream fingerprint uploads (set ENGRAM_UPSTREAM_UPLOADS=1 to run)",
+);
+
 // The E2E backend always runs on port 8001 (see playwright.config.ts / api-helpers.ts)
 const API = "http://localhost:8001";
 
