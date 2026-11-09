@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,6 +29,19 @@ from app.services.zstd_varint_codec import encode_zstd_varint, fingerprint_sha25
 CONTRIBUTION_LOG_PATH = Path("~/.engram/cache/contribution_log.jsonl").expanduser()
 
 _BATCH_SIZE = 50
+
+
+def upstream_uploads_allowed() -> bool:
+    """Fork kill switch: never send anything to the upstream author's servers.
+
+    The fingerprint network (and its disc-layout and retraction endpoints) is
+    run by the upstream Engram project. This fork does not contribute to it
+    unless ENGRAM_UPSTREAM_UPLOADS=1 is set explicitly, regardless of the
+    in-app toggle or disclosure state. Read at call time so tests can opt in.
+    """
+    return os.environ.get("ENGRAM_UPSTREAM_UPLOADS", "0") == "1"
+
+
 _MAX_ATTEMPTS = 5
 _UPLOAD_TIMEOUT = 30.0
 _CONCURRENCY = 5
@@ -103,6 +117,9 @@ class ContributionUploader:
         Returns the number of rows successfully uploaded this drain (episode +
         disc combined).
         """
+        if not upstream_uploads_allowed():
+            logger.debug("upstream uploads disabled in this fork; skipping")
+            return 0
         # Pre-check: if disabled, do nothing — don't even open a client.
         if not (await get_config()).enable_fingerprint_contributions:
             logger.debug("fingerprint contributions disabled by user; skipping upload")

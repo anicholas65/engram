@@ -2529,10 +2529,12 @@ async def forget_fingerprint_on_server(
     # NULL/blank stored URL resolves to the default network base origin, so a
     # forget always reaches the same server the uploader contributes to.
     from app.models.app_config import DEFAULT_FINGERPRINT_SERVER_URL
+    from app.services.contribution_uploader import upstream_uploads_allowed
 
     server_url = cfg.fingerprint_server_url or DEFAULT_FINGERPRINT_SERVER_URL
     server_rows_deleted = 0
-    if server_url:
+    # Fork: nothing was ever uploaded, so there is nothing to forget remotely.
+    if server_url and upstream_uploads_allowed():
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 r = await client.post(

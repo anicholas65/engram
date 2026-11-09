@@ -6,6 +6,14 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _allow_upstream_uploads_in_tests(monkeypatch):
+    """Fork: uploads to the upstream fingerprint network are off by default.
+    Upstream's own tests exercise the (mocked) uploader, so opt back in here;
+    tests of the kill switch itself delenv it."""
+    monkeypatch.setenv("ENGRAM_UPSTREAM_UPLOADS", "1")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_tmdb_persistent_cache(tmp_path, monkeypatch):
     """Redirect the on-disk TMDB cache to a tmp_path-scoped SQLite file.
 
