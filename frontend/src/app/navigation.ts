@@ -57,6 +57,7 @@ export function buildNavItems({
       disabledHint: firstReviewJobId ? undefined : "No jobs awaiting review",
     },
     { label: "HISTORY", to: ROUTES.HISTORY },
+    { label: "ENCODE", to: ROUTES.ENCODE },
     {
       label: "CONTRIBUTE",
       to: ROUTES.CONTRIBUTE,

@@ -19,6 +19,8 @@ export const ROUTES = {
   HISTORY: "/history",
   HISTORY_DETAIL: "/history/:jobId",
   CONTRIBUTE: "/contribute",
+  /** Fork: encode profiles + queue. */
+  ENCODE: "/encode",
   /** Bare `/review` — redirects to the dashboard (no jobId to review). */
   REVIEW: "/review",
   REVIEW_DETAIL: "/review/:jobId",
@@ -36,6 +38,7 @@ export const ROUTE_PATTERNS: readonly string[] = [
   ROUTES.HISTORY_DETAIL,
   ROUTES.REVIEW,
   ROUTES.REVIEW_DETAIL,
+  ROUTES.ENCODE,
   ...(FEATURES.DISCDB_CONTRIBUTE ? [ROUTES.CONTRIBUTE] : []),
 ];
 
