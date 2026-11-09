@@ -9,6 +9,12 @@ from app.models.disc_job import (
     JobState,
     TitleState,
 )
+from app.models.encode import (
+    EncodeProfile,
+    EncodeSettings,
+    EncodeTask,
+    EncodeTaskState,
+)
 from app.models.fingerprint import DiscContribution, FingerprintContribution
 from app.models.show_ordering import ShowOrderingPreference
 
@@ -23,4 +29,8 @@ __all__ = [
     "DiscContribution",
     "FingerprintContribution",
     "ShowOrderingPreference",
+    "EncodeProfile",
+    "EncodeSettings",
+    "EncodeTask",
+    "EncodeTaskState",
 ]
