@@ -1,3 +1,7 @@
+> **Engram Encode Fork**: this fork adds NVENC re-encoding with selectable codec and bitrate
+> (e.g. 4K HEVC 60 Mbps), keeping the original audio, with MKV output. See **[ENCODE-FORK.md](ENCODE-FORK.md)**.
+> Not affiliated with upstream; report fork issues at https://github.com/anicholas65/engram.
+
 <p align="center">
   <img src="docs/engram.svg" alt="Engram" width="120" height="120" />
 </p>
