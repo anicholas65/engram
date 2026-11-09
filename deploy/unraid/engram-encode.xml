@@ -8,12 +8,12 @@
 -->
 <Container version="2">
   <Name>engram-encode</Name>
-  <Repository>ghcr.io/anicholasfilms/engram:latest</Repository>
-  <Registry>https://github.com/anicholasFilms/engram/pkgs/container/engram</Registry>
+  <Repository>ghcr.io/anicholas65/engram:latest</Repository>
+  <Registry>https://github.com/anicholas65/engram/pkgs/container/engram</Registry>
   <Network>bridge</Network>
   <Privileged>true</Privileged>
-  <Support>https://github.com/anicholasFilms/engram</Support>
-  <Project>https://github.com/anicholasFilms/engram</Project>
+  <Support>https://github.com/anicholas65/engram</Support>
+  <Project>https://github.com/anicholas65/engram</Project>
   <Overview>Engram disc ripper with an encode stage: re-encode rips with NVENC to a chosen codec and bitrate (e.g. 4K HEVC 60 Mbps), keeping original audio, MKV output.</Overview>
   <Category>MediaApp:Video</Category>
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
