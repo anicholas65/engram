@@ -14,6 +14,7 @@ from app import __version__
 from app.api import manager as ws_manager
 from app.api import router as api_router
 from app.api import test_router
+from app.api.encode_routes import router as encode_router
 from app.api.validation import router as validation_router
 from app.config import settings
 from app.core.logging import setup_logging
@@ -129,6 +130,11 @@ async def lifespan(app: FastAPI):
     await job_manager.start()
     logger.info("Job manager started")
 
+    # Fork: background encode queue (re-encodes organized files; off by default).
+    from app.services.encode_queue import encode_queue
+
+    await encode_queue.start()
+
     # Start the fingerprint contribution uploader (Phase 2).
     from app.services.contribution_uploader import ContributionUploader
 
@@ -162,6 +168,9 @@ async def lifespan(app: FastAPI):
     update_task = getattr(app.state, "update_check_task", None)
     if update_task and not update_task.done():
         update_task.cancel()
+    from app.services.encode_queue import encode_queue
+
+    await encode_queue.stop()
     await job_manager.stop()
     logger.info("Shutdown complete")
 
@@ -195,6 +204,7 @@ app.add_middleware(
 app.include_router(api_router)
 app.include_router(test_router)
 app.include_router(validation_router, prefix="/api", tags=["validation"])
+app.include_router(encode_router)
 
 
 @app.websocket("/ws")
