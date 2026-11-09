@@ -73,6 +73,8 @@ COPY --from=frontend-builder /build/frontend/dist /app/app/static
 COPY docker/entrypoint.sh docker/install-makemkv.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/install-makemkv.sh
 
+# NVIDIA_DRIVER_CAPABILITIES (fork, encode stage): with --runtime=nvidia this
+# exposes NVENC/NVDEC to ffmpeg; ignored when the NVIDIA runtime is not used.
 ENV PATH="/app/.venv/bin:$PATH" \
     HOME=/config \
     HF_HOME=/config/.cache/huggingface \
@@ -82,7 +84,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     DEBUG=false \
     PUID=1000 \
     PGID=1000 \
-    MAKEMKV_VERSION=latest
+    MAKEMKV_VERSION=latest \
+    NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 
 EXPOSE 8000
 VOLUME ["/config"]

@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+  Unraid Docker template for the Engram encode fork.
+  Copy to /boot/config/plugins/dockerMan/templates-user/my-engram-encode.xml on GORT,
+  then Docker > Add Container > Template: engram-encode.
+  Requires the "Nvidia Driver" plugin for NVENC. Set NVIDIA_VISIBLE_DEVICES to the
+  GPU UUID shown on the plugin page (or "all").
+-->
+<Container version="2">
+  <Name>engram-encode</Name>
+  <Repository>ghcr.io/anicholasfilms/engram:latest</Repository>
+  <Registry>https://github.com/anicholasFilms/engram/pkgs/container/engram</Registry>
+  <Network>bridge</Network>
+  <Privileged>true</Privileged>
+  <Support>https://github.com/anicholasFilms/engram</Support>
+  <Project>https://github.com/anicholasFilms/engram</Project>
+  <Overview>Engram disc ripper with an encode stage: re-encode rips with NVENC to a chosen codec and bitrate (e.g. 4K HEVC 60 Mbps), keeping original audio, MKV output.</Overview>
+  <Category>MediaApp:Video</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/Jsakkos/engram/main/docs/engram.svg</Icon>
+  <ExtraParams>--runtime=nvidia</ExtraParams>
+  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="Dashboard / API" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="Optical drive" Target="/dev/sr0" Default="/dev/sr0" Mode="" Description="ls -l /dev/sr* on GORT" Type="Device" Display="always" Required="true" Mask="false">/dev/sr0</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/engram" Mode="rw" Description="Database, caches, compiled MakeMKV" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/engram</Config>
+  <Config Name="Movies library" Target="/media/movies" Default="/mnt/user/media/movies" Mode="rw" Description="Point the wizard at /media/movies" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media/movies</Config>
+  <Config Name="TV library" Target="/media/tv" Default="/mnt/user/media/tv" Mode="rw" Description="Point the wizard at /media/tv" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media/tv</Config>
+  <Config Name="Staging" Target="/staging" Default="/mnt/cache/engram-staging" Mode="rw" Description="In-progress rips; cache SSD recommended" Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/engram-staging</Config>
+  <Config Name="Archive (optional)" Target="/media/archive" Default="" Mode="rw" Description="Where original remuxes go when 'Keep the original remux' is on. Set the Encode page archive folder to /media/archive" Type="Path" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="NVIDIA_VISIBLE_DEVICES" Target="NVIDIA_VISIBLE_DEVICES" Default="all" Mode="" Description="GPU UUID from the Nvidia Driver plugin, or all" Type="Variable" Display="always" Required="true" Mask="false">all</Config>
+  <Config Name="NVIDIA_DRIVER_CAPABILITIES" Target="NVIDIA_DRIVER_CAPABILITIES" Default="compute,video,utility" Mode="" Description="video = NVENC/NVDEC" Type="Variable" Display="advanced" Required="true" Mask="false">compute,video,utility</Config>
+  <Config Name="MAKEMKV_APP_KEY" Target="MAKEMKV_APP_KEY" Default="" Mode="" Description="MakeMKV licence or beta key (or enter it in the setup wizard)" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="Unraid nobody" Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Unraid users" Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="TZ" Target="TZ" Default="Etc/UTC" Mode="" Description="Timezone" Type="Variable" Display="advanced" Required="false" Mask="false">Etc/UTC</Config>
+</Container>
