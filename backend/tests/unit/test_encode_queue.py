@@ -76,6 +76,14 @@ class TestSeeding:
         assert not settings[0].enabled  # stock Engram behaviour until switched on
         assert settings[0].movie_4k_profile_id == await _profile_id("4K UHD High")
 
+    async def test_null_bitrates_survive_the_round_trip(self, library):
+        async with database.async_session() as s:
+            rows = {p.name: p for p in (await s.execute(select(EncodeProfile))).scalars()}
+        assert rows["Archive"].video_bitrate_kbps is None
+        assert rows["TV Episodes"].video_bitrate_kbps is None
+        assert rows["TV Episodes"].quality == 22
+        assert rows["4K UHD High"].video_bitrate_kbps == 60_000
+
 
 class TestEnqueue:
     async def test_outside_library_rejected(self, library, tmp_path):

@@ -75,8 +75,10 @@ class EncodeProfile(SQLModel, table=True):
 
     encoder: VideoEncoder = VideoEncoder.HEVC_NVENC
     rate_control: RateControl = RateControl.BITRATE
-    video_bitrate_kbps: int | None = 60_000  # BITRATE mode target
-    max_bitrate_kbps: int | None = 80_000  # Peak cap (VBV maxrate); None = uncapped
+    # No non-None defaults on nullable columns: SQLAlchemy treats an explicit None
+    # as "unset" and would apply the default, turning a CQ profile into 60 Mbps.
+    video_bitrate_kbps: int | None = None  # BITRATE mode target
+    max_bitrate_kbps: int | None = None  # Peak cap (VBV maxrate); None = uncapped
     quality: int | None = None  # QUALITY mode: CRF / CQ value
     multipass: bool = True  # NVENC "fullres" multipass / x26x 2-pass
     preset: str = "p7"  # NVENC p1-p7, or x264/x265/svt preset name/number
