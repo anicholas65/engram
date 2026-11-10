@@ -30,6 +30,8 @@ export interface NavState {
   reviewCount?: number;
   /** Count shown on the CONTRIBUTE badge (DiscDB feature). */
   contributionPending?: number;
+  /** Fork: encodes running right now, shown on the ENCODE badge. */
+  encodingCount?: number;
 }
 
 /**
@@ -45,6 +47,7 @@ export function buildNavItems({
   firstReviewJobId,
   reviewCount = 0,
   contributionPending = 0,
+  encodingCount = 0,
 }: NavState = {}): NavItem[] {
   return [
     { label: "DASHBOARD", to: ROUTES.HOME },
@@ -57,7 +60,7 @@ export function buildNavItems({
       disabledHint: firstReviewJobId ? undefined : "No jobs awaiting review",
     },
     { label: "HISTORY", to: ROUTES.HISTORY },
-    { label: "ENCODE", to: ROUTES.ENCODE },
+    { label: "ENCODE", to: ROUTES.ENCODE, badge: encodingCount },
     {
       label: "CONTRIBUTE",
       to: ROUTES.CONTRIBUTE,

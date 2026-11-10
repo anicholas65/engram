@@ -64,6 +64,13 @@ export interface EncodeTask {
   speed: number | null;
   eta_seconds: number | null;
   duration_seconds: number | null;
+  encoder: string | null;
+  source_video_kbps: number | null;
+  target_kbps: number | null;
+  peak_kbps: number | null;
+  quality: number | null;
+  current_kbps: number | null;
+  output_video_kbps: number | null;
   source_bytes: number | null;
   output_bytes: number | null;
   error: string | null;

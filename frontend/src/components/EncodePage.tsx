@@ -29,6 +29,8 @@ import {
   type VideoEncoder,
 } from "../api/encodeClient";
 import { apiErrorDetail, ApiError } from "../api/client";
+import { useEncodeTasks } from "../hooks/useEncodeTasks";
+import { clockTime, elapsed, encoderLabel, mbps, targetLabel } from "./encodeFormat";
 
 // ---------------------------------------------------------------------------
 // Small presentational helpers
@@ -138,59 +140,6 @@ function profileSummary(p: EncodeProfile): string {
   const res = p.max_height ? ` · ≤${p.max_height}p` : "";
   const aac = p.add_stereo_aac ? ` + AAC ${p.stereo_aac_kbps}k stereo` : "";
   return `${ENCODER_LABEL[p.encoder].split(" — ")[0]} ${p.ten_bit ? "10-bit " : ""}${rate}${cap}${res} · original audio${aac}`;
-}
-
-// ---------------------------------------------------------------------------
-// Live queue (own socket: encode events are fork-only and never reach the
-// dashboard's typed message union)
-// ---------------------------------------------------------------------------
-
-function useEncodeTasks() {
-  const [tasks, setTasks] = useState<EncodeTask[]>([]);
-  const refresh = useCallback(() => {
-    encodeApi.tasks().then(setTasks).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    let ws: WebSocket | null = null;
-    let retry: number | undefined;
-    let closed = false;
-    const connect = () => {
-      ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`);
-      ws.onopen = refresh;
-      ws.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data);
-          if (msg.type === "encode_task") {
-            const t: EncodeTask = msg.task;
-            setTasks((prev) => {
-              const i = prev.findIndex((x) => x.id === t.id);
-              if (i === -1) return [t, ...prev];
-              const next = prev.slice();
-              next[i] = t;
-              return next;
-            });
-          } else if (msg.type === "encode_cleared") {
-            refresh();
-          }
-        } catch {
-          /* not ours */
-        }
-      };
-      ws.onclose = () => {
-        if (!closed) retry = window.setTimeout(connect, 3000);
-      };
-    };
-    connect();
-    return () => {
-      closed = true;
-      window.clearTimeout(retry);
-      ws?.close();
-    };
-  }, [refresh]);
-
-  return { tasks, refresh };
 }
 
 // ---------------------------------------------------------------------------
@@ -751,6 +700,41 @@ export default function EncodePage() {
   );
 }
 
+/** When it started and the bitrates involved: source → target, live or final output. */
+function RateLine({ task: t }: { task: EncodeTask }) {
+  const parts: ReactNode[] = [];
+  if (t.started_at) {
+    const took = t.state === "done" ? `took ${elapsed(t.started_at, t.finished_at)}` : `${elapsed(t.started_at)} ago`;
+    parts.push(
+      <span key="start" title={t.started_at}>
+        Started {clockTime(t.started_at)} · {took}
+      </span>,
+    );
+  }
+  if (t.encoder) parts.push(<span key="enc">{encoderLabel(t.encoder)}</span>);
+  const target = targetLabel(t);
+  if (target) parts.push(<span key="target">Target <b style={{ color: sv.ink }}>{target}</b></span>);
+  if (t.source_video_kbps) parts.push(<span key="src">Source {mbps(t.source_video_kbps)}</span>);
+  if (t.state === "running" && t.current_kbps)
+    parts.push(
+      <span key="now" title="Video bitrate so far (output size over time, minus the copied audio)">
+        Now ≈ <b style={{ color: sv.magenta }}>{mbps(t.current_kbps)}</b>
+      </span>,
+    );
+  if (t.state === "done" && t.output_video_kbps)
+    parts.push(
+      <span key="out">
+        Output <b style={{ color: sv.green }}>{mbps(t.output_video_kbps)}</b>
+      </span>,
+    );
+  if (!parts.length) return null;
+  return (
+    <div style={{ display: "flex", gap: 14, marginTop: 8, fontFamily: sv.mono, fontSize: 11, color: sv.inkDim, flexWrap: "wrap" }}>
+      {parts}
+    </div>
+  );
+}
+
 function TaskRow({ task: t, onCancel, onRetry }: { task: EncodeTask; onCancel: () => void; onRetry: () => void }) {
   const [showCmd, setShowCmd] = useState(false);
   const live = t.state === "running" || t.state === "verifying";
@@ -775,11 +759,12 @@ function TaskRow({ task: t, onCancel, onRetry }: { task: EncodeTask; onCancel: (
           </SvActionButton>
         )}
       </div>
+      {(live || t.state === "done") && <RateLine task={t} />}
       {live && (
         <div style={{ marginTop: 10 }}>
           <SvProgressBar progress={t.progress} color={t.state === "verifying" ? "yellow" : "magenta"} />
           <div style={{ display: "flex", gap: 14, marginTop: 6, fontFamily: sv.mono, fontSize: 10, color: sv.inkDim, flexWrap: "wrap" }}>
-            <span>{t.progress.toFixed(1)}%</span>
+            {t.started_at ? <span>{t.progress.toFixed(1)}%</span> : <span>{t.note ?? "Preparing…"}</span>}
             {t.fps != null && <span>{t.fps.toFixed(0)} fps</span>}
             {t.speed != null && <span>{t.speed.toFixed(2)}× realtime</span>}
             <span>{fmtEta(t.eta_seconds)}</span>

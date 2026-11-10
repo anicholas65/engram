@@ -726,9 +726,12 @@ BUILTIN_PROFILES: list[dict] = [
     },
 ]
 
-# Default profile assignment by name when settings are first created.
+# Default profile assignment by name when settings are first created. Every slot
+# starts on "4K UHD High" (HEVC 60 Mbps): a source already at or below the target
+# (x skip_if_source_below_ratio) is skipped and keeps its remux, so only files that
+# need it are re-encoded down to 60 Mbps.
 DEFAULT_ASSIGNMENT = {
-    "movie_profile_id": "1080p Standard",
+    "movie_profile_id": "4K UHD High",
     "movie_4k_profile_id": "4K UHD High",
-    "tv_profile_id": "TV Episodes",
+    "tv_profile_id": "4K UHD High",
 }

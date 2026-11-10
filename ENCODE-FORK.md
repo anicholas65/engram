@@ -71,7 +71,7 @@ Disc ─► IDENTIFY ─► RIP (MakeMKV) ─► MATCH ─► ORGANIZE ─► CO
 | TV Episodes | HEVC NVENC 10-bit | CQ 22 | 10 Mbps | Original |
 | Mobile | H.264 NVENC 720p | 2.5 Mbps | 5 Mbps | Original + AAC 192k stereo |
 
-Default assignment: movies 1080p and below → *1080p Standard*, 4K movies → *4K UHD High*, TV → *TV Episodes*.
+Default assignment: **every slot starts on *4K UHD High*** (60 Mbps). With the skip rule below, only sources above ~66 Mbps are re-encoded down to 60 Mbps; anything already at or below that (all 1080p Blu-rays, DVDs, most UHD discs) keeps its lossless remux. Pick *1080p Standard* / *TV Episodes* per slot if you want smaller files.
 All profiles can be edited; new ones can be added.
 
 ## Bitrate options
@@ -101,21 +101,26 @@ Presets in the profile editor (Mbps). **Custom…** accepts any value.
 | Decoding MPEG-2 / VC-1 / H.264 / HEVC | ✅ NVDEC |
 
 - Rough speed: a 2-hour 4K film takes about 30–60 minutes on NVENC, against 15–30 hours on the CPU.
-- NVENC sessions are shared with Jellyfin transcodes. The default is 2 encodes at a time.
+- NVENC sessions are shared with Jellyfin transcodes. The 2080 Ti has one NVENC engine, so the default is 1 encode at a time (more just share it).
 - NVENC runs on separate hardware from CUDA, so encodes can overlap with ComfyUI.
 
 ## Encode settings
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Encode automatically | **Off** | Queue a disc's files when its job completes |
+| Encode automatically | **On** | Queue a disc's files when its job completes |
 | Movies / Movies (4K) / TV | see above | Profile per content type. A source taller than 1440 lines counts as 4K |
 | Include extras | On | Encode bonus features too |
-| Simultaneous encodes | 2 | Parallel ffmpeg processes |
+| Simultaneous encodes | 1 | Parallel ffmpeg processes |
 | After a verified encode | Delete original | Or keep the remux in an archive folder (mirrors the library layout) |
 | Skip if source within | 1.1× target | Bitrate profiles skip sources already at or below the target |
 
+**What you see while it runs:** a toast on any page when an encode starts (encoder, target, source bitrate), finishes or fails; a badge on the ENCODE tab while encoding; and on each queue row the start time and elapsed time, encoder, target (e.g. *60 Mbps (peak 80)*), source video bitrate, the live video bitrate (*Now ≈ 58.7 Mbps*), and, when done, the measured output bitrate.
+
+Defaults apply when the settings row is first created. An install that already ran `v0.45.0-encode.1` keeps its saved settings; change them on the ENCODE tab.
+
 **Known limits:**
+- **HDR10 static metadata with NVENC** (to check on real hardware): the image's ffmpeg is Debian bookworm's 5.1, whose `hevc_nvenc` keeps BT.2020/PQ signalling but does not write mastering-display / MaxCLL metadata. Most TVs handle that; a newer ffmpeg (e.g. jellyfin-ffmpeg 7) would carry it. The x265 path writes it.
 - **Dolby Vision** is not carried through a re-encode; the HDR10 base layer is.
   Keep the original remux if you need DV.
 - **H.264 profiles skip HDR sources**, because H.264 can't carry HDR10.

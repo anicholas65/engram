@@ -26,6 +26,8 @@ import UpdateModal from "../components/UpdateModal";
 import { FingerprintDisclosureModal } from "../components/FingerprintDisclosureModal";
 import HistoryPage from "../components/HistoryPage";
 import EncodePage from "../components/EncodePage";
+import EncodeWatcher from "../components/EncodeWatcher";
+import { useEncodingCount } from "../hooks/useEncodeTasks";
 import ContributePage from "../components/ContributePage";
 import { FEATURES } from "../config/constants";
 import { ROUTES, reviewPath } from "../config/routes";
@@ -327,10 +329,12 @@ function MainDashboard() {
   const [backgroundEffectsEnabled] = useBackgroundEffectsEnabled();
 
   const reviewJobs = jobs.filter((j) => j.state === 'review_needed');
+  const encodingCount = useEncodingCount();
   const navItems = buildNavItems({
     firstReviewJobId: reviewJobs[0]?.id,
     reviewCount: reviewJobs.length,
     contributionPending,
+    encodingCount,
   });
 
   // Open a disc's identify prompt on demand (the card / compact-row CTA). Routes
@@ -1071,6 +1075,8 @@ function ModalScrim({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
+    <>
+    <EncodeWatcher />
     <Routes>
       <Route path={ROUTES.HOME} element={<MainDashboard />} />
       <Route path={ROUTES.HISTORY} element={<HistoryPage />} />
@@ -1081,6 +1087,7 @@ function App() {
       <Route path={ROUTES.REVIEW} element={<Navigate to={ROUTES.HOME} replace />} />
       <Route path={ROUTES.REVIEW_DETAIL} element={<ReviewQueue />} />
     </Routes>
+    </>
   );
 }
 

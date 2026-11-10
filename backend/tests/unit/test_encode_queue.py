@@ -73,8 +73,13 @@ class TestSeeding:
             settings = (await s.execute(select(EncodeSettings))).scalars().all()
         assert sorted(names) == sorted(p["name"] for p in encoder.BUILTIN_PROFILES)
         assert len(settings) == 1
-        assert not settings[0].enabled  # stock Engram behaviour until switched on
-        assert settings[0].movie_4k_profile_id == await _profile_id("4K UHD High")
+        assert settings[0].enabled  # fork default: on, with 4K UHD High everywhere
+        high = await _profile_id("4K UHD High")
+        assert (
+            settings[0].movie_profile_id,
+            settings[0].movie_4k_profile_id,
+            settings[0].tv_profile_id,
+        ) == (high, high, high)
 
     async def test_null_bitrates_survive_the_round_trip(self, library):
         async with database.async_session() as s:
@@ -125,6 +130,7 @@ class TestEnqueue:
             return job.id
 
     async def test_hook_does_nothing_while_disabled(self, library):
+        await _set(enabled=False)
         job_id = await self._tv_job(library[1])
         await eq.encode_queue.on_job_terminal(job_id, JobState.COMPLETED)
         async with database.async_session() as s:
@@ -141,7 +147,7 @@ class TestEnqueue:
             "Show - S01E01.mkv",
             "Show - S01E02.mkv",
         ]
-        assert {t.profile_name for t in tasks} == {"TV Episodes"}
+        assert {t.profile_name for t in tasks} == {"4K UHD High"}  # default TV slot
 
 
 class TestEncodeRun:

@@ -133,12 +133,14 @@ class EncodeTask(SQLModel, table=True):
 
 
 class EncodeSettings(SQLModel, table=True):
-    """Single-row settings for the encode stage. Disabled by default."""
+    """Single-row settings for the encode stage."""
 
     __tablename__ = "encode_settings"
 
     id: int | None = Field(default=None, primary_key=True)
-    enabled: bool = False  # Auto-enqueue organized files when a job completes
+    # Auto-enqueue organized files when a job completes. On by default in the fork:
+    # with the default "4K UHD High" profile only sources above ~66 Mbps are re-encoded.
+    enabled: bool = True
     movie_profile_id: int | None = None  # 1080p and below
     movie_4k_profile_id: int | None = None  # Sources taller than 1440 lines
     tv_profile_id: int | None = None
