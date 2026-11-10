@@ -84,7 +84,7 @@ class SettingsIn(BaseModel):
     movie_4k_profile_id: int | None = None
     tv_profile_id: int | None = None
     include_extras: bool = True
-    concurrency: int = Field(default=2, ge=1, le=8)
+    concurrency: int = Field(default=1, ge=1, le=8)
     keep_original: bool = False
     archive_path: str = ""
     skip_if_source_below_ratio: float = Field(default=1.1, ge=0, le=10)
@@ -137,6 +137,7 @@ async def _probe_nvenc(ffmpeg: str) -> dict:
             results[enc] = proc.returncode == 0
         except TimeoutError:
             proc.kill()
+            await proc.wait()
             results[enc] = False
     return results
 

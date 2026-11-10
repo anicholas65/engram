@@ -303,3 +303,64 @@ def test_progress_live_video_bitrate_excludes_audio():
     assert state.video_kbps(audio_bps=4_000_000) == 60_000
     encoder.parse_progress_line("total_size=N/A", state)
     assert state.total_size == 80_000_000
+
+
+class TestReviewFixes:
+    @staticmethod
+    def _p(**kw):
+        base = dict(
+            name="t",
+            encoder=VideoEncoder.HEVC_NVENC,
+            rate_control=RateControl.BITRATE,
+            video_bitrate_kbps=60_000,
+            max_bitrate_kbps=80_000,
+            ten_bit=True,
+        )
+        base.update(kw)
+        return EncodeProfile(**base)
+
+    @staticmethod
+    def _sdr(**kw):
+        base = dict(
+            duration=7200.0,
+            size_bytes=None,
+            format_bit_rate=None,
+            video_codec="mpeg2video",
+            width=720,
+            height=480,
+            video_bit_rate=None,
+        )
+        base.update(kw)
+        return encoder.MediaInfo(**base)
+
+    def test_unknown_bitrate_is_never_encoded_blind(self):
+        reason = encoder.skip_reason(self._sdr(), self._p())
+        assert reason and "Could not read" in reason
+
+    def test_falls_back_to_file_rate(self):
+        dvd = self._sdr(format_bit_rate=7_000_000)
+        assert "about 7.0 Mbps" in encoder.skip_reason(dvd, self._p())
+        by_size = self._sdr(size_bytes=6_000_000_000)  # 6.67 Mbps over 2 h
+        assert "at or below" in encoder.skip_reason(by_size, self._p())
+        big = self._sdr(format_bit_rate=95_000_000, height=2160, width=3840)
+        assert encoder.skip_reason(big, self._p()) is None
+
+    def test_dolby_vision_without_hdr10_base_skipped(self):
+        dv5 = self._sdr(dolby_vision=True, video_bit_rate=90_000_000)
+        assert "Dolby Vision" in encoder.skip_reason(dv5, self._p())
+
+    def test_svtav1_peak_cap_only_in_crf_mode(self):
+        info = self._sdr(video_bit_rate=90_000_000)
+        rate = encoder._video_args(info, self._p(encoder=VideoEncoder.LIBSVTAV1, preset="6"))
+        assert "-maxrate" not in rate and "60000k" in rate
+        crf = encoder._video_args(
+            info,
+            self._p(
+                encoder=VideoEncoder.LIBSVTAV1,
+                preset="6",
+                rate_control=RateControl.QUALITY,
+                video_bitrate_kbps=None,
+                quality=30,
+            ),
+        )
+        assert crf[crf.index("-crf") + 1] == "30" and "80000k" in crf

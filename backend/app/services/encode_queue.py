@@ -143,6 +143,7 @@ class EncodeQueue:
         self._procs: dict[int, asyncio.subprocess.Process] = {}
         self._cancel_requested: set[int] = set()
         self._hook_registered = False
+        self._hook_tasks: set[asyncio.Task] = set()
 
     # --- lifecycle --------------------------------------------------------
 
@@ -197,12 +198,21 @@ class EncodeQueue:
     # --- job hook ---------------------------------------------------------
 
     async def on_job_terminal(self, job_id: int, state: JobState) -> None:
-        """JobStateMachine on_terminal_state hook: enqueue a completed job's files."""
+        """JobStateMachine on_terminal_state hook: enqueue a completed job's files.
+
+        The state machine awaits this inline, and choosing a profile probes each
+        file, so the work runs as its own task instead of holding up the job.
+        """
         if state != JobState.COMPLETED:
             return
+        t = asyncio.create_task(self._enqueue_job_safely(job_id), name=f"encode-enqueue-{job_id}")
+        self._hook_tasks.add(t)
+        t.add_done_callback(self._hook_tasks.discard)
+
+    async def _enqueue_job_safely(self, job_id: int) -> None:
         try:
             await self.enqueue_job(job_id)
-        except Exception as e:  # never break terminal-state dispatch
+        except Exception as e:  # never surface into the job pipeline
             logger.warning(f"Job {job_id}: encode enqueue failed: {e}", exc_info=True)
 
     async def enqueue_job(self, job_id: int, *, force: bool = False) -> list[EncodeTask]:
@@ -332,6 +342,21 @@ class EncodeQueue:
                 EncodeTaskState.FAILED,
                 EncodeTaskState.CANCELLED,
             ):
+                return False
+            duplicate = (
+                (
+                    await session.execute(
+                        select(EncodeTask).where(
+                            EncodeTask.source_path == task.source_path,
+                            EncodeTask.id != task.id,
+                            EncodeTask.state.in_([EncodeTaskState.QUEUED, *ACTIVE_TASK_STATES]),
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if duplicate:  # Two encodes of one file would fight over the same temp file
                 return False
             task.state = EncodeTaskState.QUEUED
             task.progress = 0.0

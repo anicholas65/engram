@@ -29,9 +29,10 @@ export function refreshEncodeTasks(): void {
 }
 
 function connect() {
-  ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`);
-  ws.onopen = refreshEncodeTasks;
-  ws.onmessage = (ev) => {
+  const socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`);
+  ws = socket;
+  socket.onopen = refreshEncodeTasks;
+  socket.onmessage = (ev) => {
     let msg: { type?: string; task?: EncodeTask };
     try {
       msg = JSON.parse(ev.data);
@@ -51,7 +52,9 @@ function connect() {
       refreshEncodeTasks();
     }
   };
-  ws.onclose = () => {
+  socket.onclose = () => {
+    // A late close from a socket we already replaced must not clobber the new one.
+    if (ws !== socket) return;
     ws = null;
     if (listeners.size) retry = window.setTimeout(connect, 3000);
   };

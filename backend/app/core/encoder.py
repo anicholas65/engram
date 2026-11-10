@@ -318,18 +318,40 @@ def skip_reason(info: MediaInfo, profile: EncodeProfile, *, ratio: float = 1.1) 
         return "HDR source: H.264 cannot carry HDR10 — use an HEVC or AV1 profile"
     if info.is_hdr and not profile.ten_bit:
         return "HDR source needs a 10-bit profile to keep HDR10"
+    if info.dolby_vision and not info.is_hdr:
+        # Profile 5-style DV has no HDR10 base layer; re-encoding it gives wrong colours.
+        return "Dolby Vision without an HDR10 base layer: cannot be re-encoded safely"
     if (
         profile.rate_control == RateControl.BITRATE
         and profile.video_bitrate_kbps
-        and info.video_bit_rate
         and not _downscales(info, profile)
-        and info.video_bit_rate <= profile.video_bitrate_kbps * 1000 * ratio
     ):
-        return (
-            f"Source video is {info.video_bit_rate / 1e6:.1f} Mbps, already at or below the "
-            f"{profile.video_bitrate_kbps / 1000:g} Mbps target"
-        )
+        rate, exact = source_video_rate(info)
+        if rate is None:
+            # Never encode blind: a 6 Mbps DVD "re-encoded" at 60 Mbps would grow tenfold.
+            return "Could not read the source bitrate; not re-encoding to a fixed bitrate"
+        if rate <= profile.video_bitrate_kbps * 1000 * ratio:
+            what = "Source video is" if exact else "Source (video + audio) is about"
+            return (
+                f"{what} {rate / 1e6:.1f} Mbps, already at or below the "
+                f"{profile.video_bitrate_kbps / 1000:g} Mbps target"
+            )
     return None
+
+
+def source_video_rate(info: MediaInfo) -> tuple[int | None, bool]:
+    """Best estimate of the source video bitrate (bps) and whether it is video-only.
+
+    Falls back to the whole-file rate (video + audio, so an over-estimate) when the
+    container gives no per-stream figure.
+    """
+    if info.video_bit_rate:
+        return info.video_bit_rate, True
+    if info.format_bit_rate:
+        return info.format_bit_rate, False
+    if info.size_bytes and info.duration > 0:
+        return int(info.size_bytes * 8 / info.duration), False
+    return None, False
 
 
 def _downscales(info: MediaInfo, profile: EncodeProfile) -> bool:
@@ -472,11 +494,13 @@ def _video_args(info: MediaInfo, profile: EncodeProfile) -> list[str]:
         args += ["-preset", profile.preset or "6"]
         args += ["-pix_fmt", "yuv420p10le" if ten_bit else "yuv420p"]
         if bitrate and kbps:
+            # SVT-AV1 rejects a max bitrate outside CRF mode ("Max Bitrate only
+            # supported with CRF mode"), so the peak cap only applies to quality profiles.
             args += ["-b:v", f"{kbps}k"]
-            if maxk:
-                args += ["-maxrate", f"{maxk}k", "-bufsize", f"{maxk * 2}k"]
         else:
             args += ["-crf", str(profile.quality or 28)]
+            if maxk:
+                args += ["-maxrate", f"{maxk}k"]
 
     return args + _color_args(info)
 

@@ -133,6 +133,7 @@ class TestEnqueue:
         await _set(enabled=False)
         job_id = await self._tv_job(library[1])
         await eq.encode_queue.on_job_terminal(job_id, JobState.COMPLETED)
+        await asyncio.gather(*eq.encode_queue._hook_tasks)
         async with database.async_session() as s:
             assert (await s.execute(select(EncodeTask))).scalars().all() == []
 
@@ -141,6 +142,7 @@ class TestEnqueue:
         job_id = await self._tv_job(library[1])
         await eq.encode_queue.on_job_terminal(job_id, JobState.FAILED)  # ignored
         await eq.encode_queue.on_job_terminal(job_id, JobState.COMPLETED)
+        await asyncio.gather(*eq.encode_queue._hook_tasks)
         async with database.async_session() as s:
             tasks = (await s.execute(select(EncodeTask))).scalars().all()
         assert sorted(Path(t.source_path).name for t in tasks) == [
@@ -322,6 +324,14 @@ class TestEncodeRun:
         assert (await _task(tid)).state == EncodeTaskState.CANCELLED
         assert await eq.encode_queue.retry(tid)
         assert (await _task(tid)).state == EncodeTaskState.QUEUED
+
+    async def test_retry_refused_while_same_file_pending(self, library):
+        src, tid = await self._queue_file(library)
+        assert await eq.encode_queue.cancel(tid)
+        again = await eq.encode_queue.enqueue_path(str(src), await _profile_id("4K UHD High"))
+        assert again is not None
+        assert not await eq.encode_queue.retry(tid)  # `again` already covers this file
+        assert (await _task(tid)).state == EncodeTaskState.CANCELLED
 
     async def test_restart_requeues_interrupted(self, library):
         src, tid = await self._queue_file(library)
