@@ -120,7 +120,7 @@ Presets in the profile editor (Mbps). **Custom…** accepts any value.
 Defaults apply when the settings row is first created. An install that already ran `v0.45.0-encode.1` keeps its saved settings; change them on the ENCODE tab.
 
 **Known limits:**
-- **HDR10 static metadata with NVENC** (to check on real hardware): the image's ffmpeg is Debian bookworm's 5.1, whose `hevc_nvenc` keeps BT.2020/PQ signalling but does not write mastering-display / MaxCLL metadata. Most TVs handle that; a newer ffmpeg (e.g. jellyfin-ffmpeg 7) would carry it. The x265 path writes it.
+- **HDR10 static metadata with NVENC** (to check on real hardware): the image ships jellyfin-ffmpeg 7 (not Debian's 5.1), whose `hevc_nvenc` should carry the source's mastering-display / MaxCLL metadata alongside BT.2020/PQ signalling. Confirm on a real 4K HDR encode with `ffprobe -show_frames -read_intervals %+#1` on the output. The x265 path writes it explicitly.
 - **Dolby Vision** is not carried through a re-encode; the HDR10 base layer is.
   Keep the original remux if you need DV.
 - **H.264 profiles skip HDR sources**, because H.264 can't carry HDR10.

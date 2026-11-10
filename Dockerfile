@@ -44,8 +44,26 @@ FROM python:3.11-slim-bookworm AS runtime
 # Runtime tools + MakeMKV build toolchain (needed for the first-run compile) +
 # gosu (privilege drop). The toolchain inflates the image but is the cost of
 # keeping MakeMKV out of the published layers.
+#
+# Fork (encode stage): ffmpeg comes from jellyfin-ffmpeg7 instead of Debian's 5.1,
+# so hevc_nvenc writes HDR10 mastering-display / MaxCLL metadata and NVENC/NVDEC
+# match what Jellyfin on the same GPU uses. It installs to /usr/lib/jellyfin-ffmpeg;
+# the symlinks in /usr/local/bin put it first on PATH for every caller.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key -o /etc/apt/keyrings/jellyfin.asc \
+    && printf '%s\n' \
+        'Types: deb' \
+        'URIs: https://repo.jellyfin.org/debian' \
+        'Suites: bookworm' \
+        'Components: main' \
+        'Architectures: amd64' \
+        'Signed-By: /etc/apt/keyrings/jellyfin.asc' \
+        > /etc/apt/sources.list.d/jellyfin.sources \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg \
+        jellyfin-ffmpeg7 \
         libsndfile1 \
         util-linux \
         eject \
@@ -59,7 +77,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libexpat1-dev \
         libavcodec-dev \
         zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
+    && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
+    && ffmpeg -hide_banner -version | head -n1 \
+    && ffmpeg -hide_banner -encoders | grep -q hevc_nvenc
 
 WORKDIR /app
 
